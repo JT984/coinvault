@@ -1,13 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
 // These values are filled in from your .env.local file (see README)
-const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || '';
-
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || localStorage.getItem('sb_url') || '';
+const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || localStorage.getItem('sb_key') || '';
 
 export const isSupabaseConfigured = () =>
   SUPABASE_URL.startsWith('https://') && SUPABASE_ANON_KEY.length > 0;
+
+// Only create the client if we have valid credentials — avoids crash on first load
+export const supabase = isSupabaseConfigured()
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
 
 // ─── Coins ────────────────────────────────────────────────────────────────────
 
