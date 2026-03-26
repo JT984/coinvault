@@ -92,7 +92,7 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
         </div>
         <div className="form-group">
           <label className="form-label">Anon key</label>
-          <input className="form-input" type="password" value={supabaseKey} onChange={e => setSupabaseKey(e.target.value)} placeholder="eyJhbGci…" />
+          <input className="form-input" type="password" value={supabaseKey} onChange={e => setSupabaseKey(e.target.value)} placeholder="eyJhbGci..." />
         </div>
       </div>
 
