@@ -19,7 +19,6 @@ export default function AdminLoginModal({ onLogin, onClose }) {
         <div className="sheet-handle" />
         <div className="sheet-title">Admin login</div>
         <div className="sheet-sub">Enter your PIN to enable editing.</div>
-
         <div className="form-group">
           <label className="form-label">PIN</label>
           <input
@@ -35,11 +34,6 @@ export default function AdminLoginModal({ onLogin, onClose }) {
           />
           {error && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 6 }}>{error}</div>}
         </div>
-
-        <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14 }}>
-          Default PIN is <strong style={{ color: 'var(--text2)' }}>1234</strong>. Change it in Settings after logging in.
-        </div>
-
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <button className="btn btn-outline" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={!pin}>Login</button>
