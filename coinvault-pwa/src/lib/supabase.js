@@ -1,18 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
-// These values are filled in from your .env.local file (see README)
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || localStorage.getItem('sb_url') || '';
 const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || localStorage.getItem('sb_key') || '';
 
 export const isSupabaseConfigured = () =>
   SUPABASE_URL.startsWith('https://') && SUPABASE_ANON_KEY.length > 0;
 
-// Only create the client if we have valid credentials — avoids crash on first load
 export const supabase = isSupabaseConfigured()
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
-
-// ─── Coins ────────────────────────────────────────────────────────────────────
 
 export async function fetchCoins() {
   const { data, error } = await supabase
@@ -20,7 +16,7 @@ export async function fetchCoins() {
     .select('*')
     .order('current_value', { ascending: false, nullsFirst: false });
   if (error) throw error;
-  return data || [];
+  return (data || []).map(fromDb);
 }
 
 export async function insertCoin(coin) {
@@ -49,15 +45,13 @@ export async function deleteCoin(id) {
   if (error) throw error;
 }
 
-// ─── Sold coins ───────────────────────────────────────────────────────────────
-
 export async function fetchSoldCoins() {
   const { data, error } = await supabase
     .from('sold_coins')
     .select('*')
     .order('sale_date', { ascending: false });
   if (error) throw error;
-  return data || [];
+  return (data || []).map(fromDb);
 }
 
 export async function insertSoldCoin(sold) {
@@ -69,8 +63,6 @@ export async function insertSoldCoin(sold) {
   if (error) throw error;
   return data;
 }
-
-// ─── Field name mapping (camelCase JS ↔ snake_case DB) ───────────────────────
 
 function toDb(c) {
   const out = {};
