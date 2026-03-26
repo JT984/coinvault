@@ -1,36 +1,99 @@
 import React, { useState } from 'react';
+import { lookupPCGS, loadPCGSCreds } from '../lib/pcgs';
 
 const fmt = (v) => v != null ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v) : '—';
 const fmtPL = (v) => v != null ? (v >= 0 ? '+' : '') + fmt(v) : null;
 
-export default function CoinDetailView({ coin, onBack, onUpdate, onSell }) {
+// Build correct NGC cert verification URL from cert number
+function ngcCertURL(certNumber) {
+  // NGC cert lookup: https://www.ngccoin.com/certlookup/{certNumber}/
+  // Strip any dashes and spaces for the URL
+  const clean = (certNumber || '').replace(/[-\s]/g, '');
+  return `https://www.ngccoin.com/certlookup/${clean}/`;
+}
+
+function pcgsCertURL(certNumber) {
+  const clean = (certNumber || '').replace(/[-\s]/g, '');
+  return `https://www.pcgs.com/cert/${clean}`;
+}
+
+export default function CoinDetailView({ coin, onBack, onUpdate, onSell, adminMode }) {
   const [showSell, setShowSell] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState('');
 
   const totalCost = (coin.purchaseCost || 0) + (coin.shippingCost || 0);
   const pl = coin.currentValue != null ? coin.currentValue - totalCost : null;
 
+  // Build the best cert URL for this coin
+  const certLink = coin.gradingService === 'NGC'
+    ? ngcCertURL(coin.certNumber)
+    : coin.gradingService === 'PCGS'
+      ? pcgsCertURL(coin.certNumber)
+      : coin.certURL || null;
+
   async function handleRefresh() {
     setRefreshing(true);
-    // For PCGS coins, refresh via the API; for NGC, open the cert URL
-    if (coin.gradingService === 'NGC' && coin.certURL) {
-      window.open(coin.certURL, '_blank');
+    setRefreshMsg('');
+    try {
+      if (coin.gradingService === 'PCGS') {
+        const creds = loadPCGSCreds();
+        if (!creds?.clientId) {
+          setRefreshMsg('PCGS credentials not set — go to Settings to add them.');
+          return;
+        }
+        const result = await lookupPCGS(coin.certNumber, creds);
+        if (result?.currentValue) {
+          await onUpdate(coin.id, { currentValue: result.currentValue, lastValueUpdate: new Date().toISOString() });
+          setRefreshMsg(`Updated to ${fmt(result.currentValue)}`);
+        } else {
+          setRefreshMsg('No updated value found from PCGS.');
+        }
+      } else {
+        // NGC — open cert page so user can check manually
+        window.open(ngcCertURL(coin.certNumber), '_blank', 'noopener,noreferrer');
+        setRefreshMsg('Opened NGC cert page — update the value manually if it has changed.');
+      }
+    } catch (e) {
+      setRefreshMsg('Refresh failed: ' + e.message);
+    } finally {
+      setRefreshing(false);
     }
-    // PCGS refresh would call the API here
-    setTimeout(() => setRefreshing(false), 1200);
   }
 
   return (
     <>
-      {/* Back nav */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--gold)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 14, padding: 0 }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-          Collection
+      {/* Back nav — padded to avoid iPhone clock */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        marginBottom: 16,
+        paddingTop: 'max(0px, env(safe-area-inset-top))',
+        minHeight: 44,
+      }}>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'none', border: 'none', color: 'var(--gold)',
+            cursor: 'pointer', display: 'flex', alignItems: 'center',
+            gap: 4, fontSize: 15, padding: '8px 8px 8px 0',
+            minWidth: 44, minHeight: 44,
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+          Back
         </button>
         <div style={{ flex: 1 }} />
-        <button onClick={() => setShowEdit(true)} style={{ background: 'none', border: 'none', color: 'var(--gold)', cursor: 'pointer', fontSize: 14 }}>Edit</button>
+        {adminMode && (
+          <button
+            onClick={() => setShowEdit(true)}
+            style={{ background: 'none', border: 'none', color: 'var(--gold)', cursor: 'pointer', fontSize: 15, padding: '8px 0 8px 8px', minHeight: 44 }}
+          >
+            Edit
+          </button>
+        )}
       </div>
 
       {/* Hero */}
@@ -50,7 +113,7 @@ export default function CoinDetailView({ coin, onBack, onUpdate, onSell }) {
         <div className="value-hero-label">Current value</div>
         <div className="value-hero-amount">{coin.currentValue != null ? fmt(coin.currentValue) : '—'}</div>
         {pl != null && (
-          <div className={`value-hero-pl ${pl >= 0 ? '' : 'neg'}`} style={{ color: pl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+          <div className="value-hero-pl" style={{ color: pl >= 0 ? 'var(--green)' : 'var(--red)' }}>
             {fmtPL(pl)} · cost basis {fmt(totalCost)}
           </div>
         )}
@@ -61,10 +124,14 @@ export default function CoinDetailView({ coin, onBack, onUpdate, onSell }) {
         )}
       </div>
 
-      <button className="btn btn-refresh" onClick={handleRefresh} disabled={refreshing}>
+      {/* Refresh button — always visible, explains NGC limitation */}
+      <button className="btn btn-refresh" onClick={handleRefresh} disabled={refreshing} style={{ marginBottom: refreshMsg ? 4 : 8 }}>
         {refreshing ? <span className="spinner" /> : <RefreshIcon />}
-        {coin.gradingService === 'NGC' ? 'View on NGC registry' : `Refresh from ${coin.gradingService}`}
+        {coin.gradingService === 'PCGS' ? 'Refresh value from PCGS' : 'View on NGC to check value'}
       </button>
+      {refreshMsg && (
+        <div style={{ fontSize: 12, color: 'var(--text2)', textAlign: 'center', marginBottom: 8, padding: '0 8px' }}>{refreshMsg}</div>
+      )}
 
       {/* Coin info */}
       <div className="detail-group">
@@ -85,10 +152,17 @@ export default function CoinDetailView({ coin, onBack, onUpdate, onSell }) {
         {coin.registryPoints != null && <DetailRow label="Registry points" value={coin.registryPoints.toLocaleString()} />}
         {coin.ngcPopulation != null && <DetailRow label="NGC population" value={coin.ngcPopulation.toLocaleString()} />}
         {coin.pcgsPopulation != null && <DetailRow label="PCGS population" value={coin.pcgsPopulation.toLocaleString()} />}
-        {coin.certURL && (
+        {/* Fixed cert link — uses correct URL format per service */}
+        {certLink && (
           <div className="detail-row">
             <span className="detail-label">Cert link</span>
-            <a href={coin.certURL} target="_blank" rel="noreferrer" className="detail-link">
+            <a
+              href={certLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="detail-link"
+              onClick={e => { e.preventDefault(); window.open(certLink, '_blank', 'noopener,noreferrer'); }}
+            >
               View on {coin.gradingService} ›
             </a>
           </div>
@@ -117,13 +191,20 @@ export default function CoinDetailView({ coin, onBack, onUpdate, onSell }) {
         </div>
       )}
 
-      {/* Sell button */}
-      <button className="btn btn-danger" onClick={() => setShowSell(true)} style={{ marginTop: 8 }}>
-        <TagIcon /> Mark as sold
-      </button>
+      {/* Sell — admin only */}
+      {adminMode && (
+        <button className="btn btn-danger" onClick={() => setShowSell(true)} style={{ marginTop: 8, marginBottom: 32 }}>
+          <TagIcon /> Mark as sold
+        </button>
+      )}
 
-      {/* Sell sheet */}
-      {showSell && (
+      {!adminMode && (
+        <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--text3)', marginTop: 16, marginBottom: 32 }}>
+          Read-only — log in as admin to edit or sell
+        </div>
+      )}
+
+      {showSell && adminMode && (
         <SellSheet
           coin={coin}
           totalCost={totalCost}
@@ -132,8 +213,7 @@ export default function CoinDetailView({ coin, onBack, onUpdate, onSell }) {
         />
       )}
 
-      {/* Edit sheet */}
-      {showEdit && (
+      {showEdit && adminMode && (
         <EditSheet
           coin={coin}
           onClose={() => setShowEdit(false)}
@@ -165,12 +245,10 @@ function SellSheet({ coin, totalCost, onClose, onConfirm }) {
           <label className="form-label">Sale price</label>
           <input className="form-input" type="number" min="0" step="0.01" placeholder="$0.00" value={salePrice} onChange={e => setSalePrice(e.target.value)} autoFocus />
         </div>
-
         <div className="form-group">
           <label className="form-label">Sale date</label>
           <input className="form-input" type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} />
         </div>
-
         <div className="form-group">
           <label className="form-label">Sold to</label>
           <input className="form-input" type="text" placeholder="e.g. eBay, Heritage Auctions, dealer…" value={soldTo} onChange={e => setSoldTo(e.target.value)} />
@@ -188,11 +266,7 @@ function SellSheet({ coin, totalCost, onClose, onConfirm }) {
           </div>
         )}
 
-        <button
-          className="btn btn-primary"
-          disabled={!price}
-          onClick={() => onConfirm({ salePrice: price, saleDate, soldTo })}
-        >
+        <button className="btn btn-primary" disabled={!price} onClick={() => onConfirm({ salePrice: price, saleDate, soldTo })}>
           Confirm sale
         </button>
       </div>
@@ -219,7 +293,6 @@ function EditSheet({ coin, onClose, onSave }) {
     shippingCost: coin.shippingCost || '',
     notes: coin.notes || '',
   });
-
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   function handleSave() {
@@ -229,6 +302,7 @@ function EditSheet({ coin, onClose, onSave }) {
       currentValue: form.currentValue ? parseFloat(form.currentValue) : null,
       purchaseCost: form.purchaseCost ? parseFloat(form.purchaseCost) : null,
       shippingCost: parseFloat(form.shippingCost) || 0,
+      lastValueUpdate: form.currentValue ? new Date().toISOString() : coin.lastValueUpdate,
     });
   }
 
@@ -253,7 +327,7 @@ function EditSheet({ coin, onClose, onSave }) {
               {['NGC','PCGS','ANACS'].map(s => <option key={s}>{s}</option>)}
             </select>
           </div>
-          <div className="form-group"><label className="form-label">Strike type</label>
+          <div className="form-group"><label className="form-label">Strike</label>
             <select className="form-select" value={form.strikeType} onChange={e => set('strikeType', e.target.value)}>
               {['Business','Proof','Business Satin Finish'].map(s => <option key={s}>{s}</option>)}
             </select>
@@ -261,12 +335,11 @@ function EditSheet({ coin, onClose, onSave }) {
         </div>
         <div className="form-group"><label className="form-label">Descriptors</label><input className="form-input" value={form.descriptors} onChange={e => set('descriptors', e.target.value)} /></div>
         <div className="form-group"><label className="form-label">Cert number</label><input className="form-input" value={form.certNumber} onChange={e => set('certNumber', e.target.value)} /></div>
-        <div className="form-group"><label className="form-label">Cert URL</label><input className="form-input" type="url" value={form.certURL} onChange={e => set('certURL', e.target.value)} /></div>
         <div className="form-row">
           <div className="form-group"><label className="form-label">Current value</label><input className="form-input" type="number" step="0.01" value={form.currentValue} onChange={e => set('currentValue', e.target.value)} /></div>
           <div className="form-group"><label className="form-label">Purchase cost</label><input className="form-input" type="number" step="0.01" value={form.purchaseCost} onChange={e => set('purchaseCost', e.target.value)} /></div>
         </div>
-        <div className="form-group"><label className="form-label">Shipping cost</label><input className="form-input" type="number" step="0.01" value={form.shippingCost} onChange={e => set('shippingCost', e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">Shipping</label><input className="form-input" type="number" step="0.01" value={form.shippingCost} onChange={e => set('shippingCost', e.target.value)} /></div>
         <div className="form-group"><label className="form-label">Notes</label><textarea className="form-textarea" value={form.notes} onChange={e => set('notes', e.target.value)} /></div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -278,8 +351,6 @@ function EditSheet({ coin, onClose, onSave }) {
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 function DetailRow({ label, value }) {
   return (
     <div className="detail-row">
@@ -288,9 +359,5 @@ function DetailRow({ label, value }) {
     </div>
   );
 }
-function RefreshIcon() {
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>;
-}
-function TagIcon() {
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>;
-}
+function RefreshIcon() { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>; }
+function TagIcon() { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>; }
