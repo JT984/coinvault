@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { savePCGSCreds, loadPCGSCreds } from '../lib/pcgs';
 
-export default function SettingsView({ onConfigured, adminMode, onAdminLogin, onAdminLogout }) {
+export default function SettingsView({ onConfigured, adminMode, onAdminLogin, onAdminLogout, onSavePin }) {
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
   const [pcgs, setPcgs] = useState({ clientId: '', clientSecret: '', username: '', password: '' });
@@ -26,13 +26,17 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
     if (supabaseUrl && supabaseKey) onConfigured();
   }
 
-  function savePin() {
+  async function savePin() {
     if (!newPin || newPin.length < 4) { setPinMsg('PIN must be at least 4 digits.'); return; }
     if (newPin !== confirmPin) { setPinMsg('PINs do not match.'); return; }
-    localStorage.setItem('coinvault_admin_pin', newPin);
-    setNewPin(''); setConfirmPin('');
-    setPinMsg('PIN updated successfully.');
-    setTimeout(() => setPinMsg(''), 3000);
+    const ok = await onSavePin(newPin);
+    if (ok) {
+      setNewPin(''); setConfirmPin('');
+      setPinMsg('PIN updated — takes effect on all devices immediately.');
+      setTimeout(() => setPinMsg(''), 4000);
+    } else {
+      setPinMsg('Failed to save PIN. Check your Supabase connection.');
+    }
   }
 
   const setP = (k, v) => setPcgs(p => ({ ...p, [k]: v }));
@@ -43,7 +47,6 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
         <div className="page-title">Settings</div>
       </div>
 
-      {/* Admin section */}
       <div className="settings-section">
         <div className="settings-title">Admin access</div>
         {adminMode ? (
@@ -53,8 +56,9 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
               <span style={{ fontSize: 13, color: 'var(--green)', fontWeight: 500 }}>Logged in as admin</span>
               <button onClick={onAdminLogout} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>Log out</button>
             </div>
-
-            <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>Change your admin PIN:</div>
+            <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
+              Change your admin PIN — takes effect on all devices immediately:
+            </div>
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">New PIN</label>
@@ -65,8 +69,8 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
                 <input className="form-input" type="password" inputMode="numeric" maxLength={8} placeholder="Repeat PIN" value={confirmPin} onChange={e => { setConfirmPin(e.target.value); setPinMsg(''); }} />
               </div>
             </div>
-            {pinMsg && <div style={{ fontSize: 12, color: pinMsg.includes('success') ? 'var(--green)' : 'var(--red)', marginBottom: 8 }}>{pinMsg}</div>}
-            <button className="btn btn-outline" onClick={savePin} style={{ marginBottom: 0 }}>Update PIN</button>
+            {pinMsg && <div style={{ fontSize: 12, color: pinMsg.includes('updated') ? 'var(--green)' : 'var(--red)', marginBottom: 8 }}>{pinMsg}</div>}
+            <button className="btn btn-outline" onClick={savePin}>Update PIN</button>
           </>
         ) : (
           <>
@@ -80,18 +84,8 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
 
       <hr className="divider" />
 
-      {/* Supabase */}
       <div className="settings-section">
         <div className="settings-title">Shared database (Supabase)</div>
-        <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 12 }}>
-          Connect a Supabase database so your group shares the same collection in real time.
-        </div>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 14, marginBottom: 12, fontSize: 12, color: 'var(--text2)', lineHeight: 1.8 }}>
-          <strong style={{ color: 'var(--text)' }}>Setup:</strong><br />
-          1. Go to <a href="https://supabase.com" target="_blank" rel="noreferrer" style={{ color: 'var(--gold)' }}>supabase.com</a> → New project (free)<br />
-          2. Run the SQL from the README in the SQL editor<br />
-          3. Project Settings → API → copy URL and anon key below
-        </div>
         <div className="form-group">
           <label className="form-label">Project URL</label>
           <input className="form-input" value={supabaseUrl} onChange={e => setSupabaseUrl(e.target.value)} placeholder="https://xxxx.supabase.co" />
@@ -104,22 +98,21 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
 
       <hr className="divider" />
 
-      {/* PCGS */}
       <div className="settings-section">
         <div className="settings-title">PCGS API (auto-lookup)</div>
         <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 12 }}>
-          Get API access at <a href="https://www.pcgs.com/publicapi" target="_blank" rel="noreferrer" style={{ color: 'var(--gold)' }}>pcgs.com/publicapi</a>. Enables cert lookup and automatic value refresh for PCGS coins.
+          Get access at <a href="https://www.pcgs.com/publicapi" target="_blank" rel="noreferrer" style={{ color: 'var(--gold)' }}>pcgs.com/publicapi</a>.
         </div>
         <div className="form-group"><label className="form-label">Client ID</label><input className="form-input" value={pcgs.clientId} onChange={e => setP('clientId', e.target.value)} /></div>
         <div className="form-group"><label className="form-label">Client Secret</label><input className="form-input" type="password" value={pcgs.clientSecret} onChange={e => setP('clientSecret', e.target.value)} /></div>
-        <div className="form-group"><label className="form-label">Username (email)</label><input className="form-input" value={pcgs.username} onChange={e => setP('username', e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">Username</label><input className="form-input" value={pcgs.username} onChange={e => setP('username', e.target.value)} /></div>
         <div className="form-group"><label className="form-label">Password</label><input className="form-input" type="password" value={pcgs.password} onChange={e => setP('password', e.target.value)} /></div>
       </div>
 
       <button className="btn btn-primary" onClick={saveSettings}>{saved ? '✓ Saved' : 'Save settings'}</button>
 
-      <div style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', marginTop: 16, lineHeight: 1.6, paddingBottom: 24 }}>
-        Credentials are stored only in your browser and sent directly to Supabase and PCGS — never to any other server.
+      <div style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', marginTop: 16, paddingBottom: 24 }}>
+        Credentials are stored only in your browser and sent directly to Supabase and PCGS.
       </div>
     </>
   );
