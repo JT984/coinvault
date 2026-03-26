@@ -40,7 +40,7 @@ html, body, #root {
 
 /* ── Layout ── */
 .app { display: flex; flex-direction: column; height: 100dvh; }
-.page { flex: 1; overflow-y: auto; padding: 16px 16px calc(16px + var(--safe-bottom)); }
+.page { flex: 1; overflow-y: auto; padding: max(16px, calc(env(safe-area-inset-top) + 8px)) 16px calc(16px + var(--safe-bottom)); }
 .page-header { margin-bottom: 20px; }
 .page-title { font-family: var(--font-serif); font-size: 28px; color: var(--text); }
 .page-sub { font-size: 13px; color: var(--text2); margin-top: 2px; }
