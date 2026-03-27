@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 
 const SORT_OPTIONS = ['Value', 'Year', 'Grade', 'P/L', 'Name'];
-
 const fmt = (v) => v != null ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(v) : '—';
 const fmtPL = (v) => v != null ? (v >= 0 ? '+' : '') + fmt(v) : null;
 
 export default function CollectionView({ coins, onSelectCoin, configured }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('Value');
+  const [sortOpen, setSortOpen] = useState(false);
 
   const totalValue = useMemo(() => coins.reduce((s, c) => s + (c.currentValue || 0), 0), [coins]);
   const totalCost  = useMemo(() => coins.reduce((s, c) => s + (c.purchaseCost || 0) + (c.shippingCost || 0), 0), [coins]);
@@ -44,7 +44,7 @@ export default function CollectionView({ coins, onSelectCoin, configured }) {
     <>
       {!configured && (
         <div className="config-banner">
-          ⚠️ Supabase not configured — showing your 245 coins from the spreadsheet in local mode. Go to Settings to connect a shared database.
+          ⚠️ Supabase not configured — showing local data. Go to Settings to connect.
         </div>
       )}
 
@@ -56,30 +56,47 @@ export default function CollectionView({ coins, onSelectCoin, configured }) {
           {fmtPL(totalPL)} vs. cost basis
         </div>
         <div className="portfolio-bar-track">
-          <div
-            className="portfolio-bar-fill"
-            style={{ width: `${totalCost > 0 ? Math.min((totalValue / (totalValue + totalCost)) * 100, 100) : 0}%` }}
-          />
+          <div className="portfolio-bar-fill" style={{ width: `${totalCost > 0 ? Math.min((totalValue / (totalValue + totalCost)) * 100, 100) : 0}%` }} />
         </div>
       </div>
 
-      {/* Search */}
-      <div className="search-wrap">
-        <SearchIcon />
-        <input
-          className="search-input"
-          placeholder="Search coins…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+      {/* Search + sort toggle row */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: sortOpen ? 8 : 12 }}>
+        <div className="search-wrap" style={{ flex: 1, marginBottom: 0 }}>
+          <SearchIcon />
+          <input className="search-input" placeholder="Search coins…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <button
+          onClick={() => setSortOpen(o => !o)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            background: sortOpen ? 'var(--gold-bg2)' : 'var(--surface2)',
+            border: `1px solid ${sortOpen ? 'var(--gold-dim)' : 'var(--border)'}`,
+            color: sortOpen ? 'var(--gold)' : 'var(--text2)',
+            borderRadius: 'var(--radius-sm)', padding: '0 12px',
+            height: 38, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+            whiteSpace: 'nowrap', flexShrink: 0,
+          }}
+        >
+          <SortIcon />
+          {sort}
+        </button>
       </div>
 
-      {/* Sort chips */}
-      <div className="chip-row">
-        {SORT_OPTIONS.map(o => (
-          <button key={o} className={`chip ${sort === o ? 'active' : ''}`} onClick={() => setSort(o)}>{o}</button>
-        ))}
-      </div>
+      {/* Sort chips — only visible when open */}
+      {sortOpen && (
+        <div className="chip-row" style={{ marginBottom: 12 }}>
+          {SORT_OPTIONS.map(o => (
+            <button
+              key={o}
+              className={`chip ${sort === o ? 'active' : ''}`}
+              onClick={() => { setSort(o); setSortOpen(false); }}
+            >
+              {o}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* List */}
       <div className="card" style={{ padding: '0 16px' }}>
@@ -121,9 +138,9 @@ function CoinRow({ coin, onClick }) {
 }
 
 function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-    </svg>
-  );
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>;
+}
+
+function SortIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/></svg>;
 }
