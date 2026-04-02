@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { savePCGSCreds, loadPCGSCreds } from '../lib/pcgs';
 
-export default function SettingsView({ onConfigured, adminMode, onAdminLogin, onAdminLogout, onSavePin }) {
+export default function SettingsView({ onConfigured, adminMode, onAdminLogin, onAdminLogout, onSavePin, onSavePassword }) {
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
   const [pcgs, setPcgs] = useState({ clientId: '', clientSecret: '', username: '', password: '' });
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [pinMsg, setPinMsg] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordMsg, setPasswordMsg] = useState('');
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -39,6 +42,19 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
     }
   }
 
+  async function savePassword() {
+    if (!newPassword || newPassword.length < 4) { setPasswordMsg('Password must be at least 4 characters.'); return; }
+    if (newPassword !== confirmPassword) { setPasswordMsg('Passwords do not match.'); return; }
+    const ok = await onSavePassword(newPassword);
+    if (ok) {
+      setNewPassword(''); setConfirmPassword('');
+      setPasswordMsg('App password updated — all devices will use the new password.');
+      setTimeout(() => setPasswordMsg(''), 4000);
+    } else {
+      setPasswordMsg('Failed to save password. Check your Supabase connection.');
+    }
+  }
+
   const setP = (k, v) => setPcgs(p => ({ ...p, [k]: v }));
 
   return (
@@ -47,6 +63,7 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
         <div className="page-title">Settings</div>
       </div>
 
+      {/* Admin access */}
       <div className="settings-section">
         <div className="settings-title">Admin access</div>
         {adminMode ? (
@@ -56,8 +73,27 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
               <span style={{ fontSize: 13, color: 'var(--green)', fontWeight: 500 }}>Logged in as admin</span>
               <button onClick={onAdminLogout} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>Log out</button>
             </div>
+
+            {/* App password */}
             <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-              Change your admin PIN — takes effect on all devices immediately:
+              Change app password — required to open CoinVault on any device:
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">New password</label>
+                <input className="form-input" type="password" placeholder="Min 4 characters" value={newPassword} onChange={e => { setNewPassword(e.target.value); setPasswordMsg(''); }} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Confirm password</label>
+                <input className="form-input" type="password" placeholder="Repeat password" value={confirmPassword} onChange={e => { setConfirmPassword(e.target.value); setPasswordMsg(''); }} />
+              </div>
+            </div>
+            {passwordMsg && <div style={{ fontSize: 12, color: passwordMsg.includes('updated') ? 'var(--green)' : 'var(--red)', marginBottom: 8 }}>{passwordMsg}</div>}
+            <button className="btn btn-outline" onClick={savePassword} style={{ marginBottom: 16 }}>Update app password</button>
+
+            {/* Admin PIN */}
+            <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
+              Change admin PIN — required to edit, add, or sell coins:
             </div>
             <div className="form-row">
               <div className="form-group">
@@ -70,7 +106,7 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
               </div>
             </div>
             {pinMsg && <div style={{ fontSize: 12, color: pinMsg.includes('updated') ? 'var(--green)' : 'var(--red)', marginBottom: 8 }}>{pinMsg}</div>}
-            <button className="btn btn-outline" onClick={savePin}>Update PIN</button>
+            <button className="btn btn-outline" onClick={savePin}>Update admin PIN</button>
           </>
         ) : (
           <>
@@ -84,6 +120,7 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
 
       <hr className="divider" />
 
+      {/* Supabase */}
       <div className="settings-section">
         <div className="settings-title">Shared database (Supabase)</div>
         <div className="form-group">
@@ -98,6 +135,7 @@ export default function SettingsView({ onConfigured, adminMode, onAdminLogin, on
 
       <hr className="divider" />
 
+      {/* PCGS */}
       <div className="settings-section">
         <div className="settings-title">PCGS API (auto-lookup)</div>
         <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 12 }}>
