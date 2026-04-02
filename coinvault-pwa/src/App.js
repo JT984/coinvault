@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import './index.css';
-import { fetchCoins, fetchSoldCoins, insertCoin, updateCoin, deleteCoin, insertSoldCoin, isSupabaseConfigured, getAdminPin, setAdminPin } from './lib/supabase';
+import { fetchCoins, fetchSoldCoins, insertCoin, updateCoin, deleteCoin, insertSoldCoin, isSupabaseConfigured, getAdminPin, setAdminPin, getAppPassword, setAppPassword } from './lib/supabase';
 import SEED_DATA from './seedData';
 import CollectionView from './components/CollectionView';
 import CoinDetailView from './components/CoinDetailView';
@@ -9,13 +9,22 @@ import PortfolioView from './components/PortfolioView';
 import SoldArchiveView from './components/SoldArchiveView';
 import SettingsView from './components/SettingsView';
 import AdminLoginModal from './components/AdminLoginModal';
+import PasswordGate from './components/PasswordGate';
 
+// ── Session helpers ────────────────────────────────────────────────────────────
 export function getAdminSession() {
   return sessionStorage.getItem('coinvault_is_admin') === 'true';
 }
 export function setAdminSession(val) {
   if (val) sessionStorage.setItem('coinvault_is_admin', 'true');
   else sessionStorage.removeItem('coinvault_is_admin');
+}
+function getUnlockedSession() {
+  return sessionStorage.getItem('coinvault_unlocked') === 'true';
+}
+function setUnlockedSession(val) {
+  if (val) sessionStorage.setItem('coinvault_unlocked', 'true');
+  else sessionStorage.removeItem('coinvault_unlocked');
 }
 
 export default function App() {
@@ -28,24 +37,28 @@ export default function App() {
   const [adminMode, setAdminMode] = useState(getAdminSession());
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [cachedPin, setCachedPin] = useState(null);
+  const [cachedPassword, setCachedPassword] = useState(null);
+  // Password gate — stays unlocked for the browser session
+  const [unlocked, setUnlocked] = useState(getUnlockedSession());
 
   const loadData = useCallback(async () => {
     if (!isSupabaseConfigured()) {
       setCoins(SEED_DATA.map((c, i) => ({ ...c, id: i + 1 })));
       setSoldCoins([]);
       setLoading(false);
+      // No password required in local mode
+      setUnlocked(true);
+      setUnlockedSession(true);
       return;
     }
     try {
-      const [c, s, pin] = await Promise.all([fetchCoins(), fetchSoldCoins(), getAdminPin()]);
+      const [c, s, pin, pwd] = await Promise.all([
+        fetchCoins(), fetchSoldCoins(), getAdminPin(), getAppPassword()
+      ]);
       setCoins(c);
       setSoldCoins(s);
-      if (!pin) {
-        await setAdminPin('1234');
-        setCachedPin('1234');
-      } else {
-        setCachedPin(pin);
-      }
+      if (!pin) { await setAdminPin('1234'); setCachedPin('1234'); } else { setCachedPin(pin); }
+      setCachedPassword(pwd);
     } catch (e) {
       console.error(e);
     } finally {
@@ -55,6 +68,23 @@ export default function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // ── Password gate check ───────────────────────────────────────────────────
+  async function handleUnlock(password) {
+    // If no app password is set yet, any entry unlocks (first-time setup)
+    if (!cachedPassword) {
+      setUnlocked(true);
+      setUnlockedSession(true);
+      return true;
+    }
+    if (password === cachedPassword) {
+      setUnlocked(true);
+      setUnlockedSession(true);
+      return true;
+    }
+    return false;
+  }
+
+  // ── Admin auth ────────────────────────────────────────────────────────────
   async function handleAdminLogin(pin) {
     const correct = cachedPin || '1234';
     if (pin === correct) {
@@ -72,11 +102,18 @@ export default function App() {
     return ok;
   }
 
+  async function handleSavePassword(newPassword) {
+    const ok = await setAppPassword(newPassword);
+    if (ok) setCachedPassword(newPassword);
+    return ok;
+  }
+
   function handleAdminLogout() {
     setAdminSession(false);
     setAdminMode(false);
   }
 
+  // ── Coin actions ──────────────────────────────────────────────────────────
   async function handleAddCoin(coinData) {
     if (!isSupabaseConfigured()) {
       setCoins(prev => [{ ...coinData, id: Date.now() }, ...prev]);
@@ -116,42 +153,68 @@ export default function App() {
     setTab('collection');
   }
 
+  // ── Render ────────────────────────────────────────────────────────────────
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100dvh', flexDirection: 'column', gap: 16 }}>
         <div className="spinner" style={{ width: 32, height: 32, borderWidth: 3 }} />
-        <span style={{ color: 'var(--text2)', fontSize: 14 }}>Loading your collection...</span>
+        <span style={{ color: 'var(--text2)', fontSize: 14 }}>Loading CoinVault...</span>
       </div>
     );
+  }
+
+  // Show password gate if locked
+  if (!unlocked) {
+    return <PasswordGate onUnlock={handleUnlock} />;
   }
 
   return (
     <div className="app">
       <div className="page">
         {selectedCoin ? (
-          <CoinDetailView coin={selectedCoin} onBack={() => setSelectedCoin(null)} onUpdate={handleUpdateCoin} onSell={handleSellCoin} adminMode={adminMode} />
+          <CoinDetailView
+            coin={selectedCoin}
+            onBack={() => setSelectedCoin(null)}
+            onUpdate={handleUpdateCoin}
+            onSell={handleSellCoin}
+            adminMode={adminMode}
+          />
         ) : tab === 'collection' ? (
           <CollectionView coins={coins} onSelectCoin={setSelectedCoin} configured={configured} />
         ) : tab === 'portfolio' ? (
           <PortfolioView coins={coins} soldCoins={soldCoins} onSelectCoin={setSelectedCoin} />
         ) : tab === 'add' ? (
-          adminMode ? <AddCoinView onAdd={handleAddCoin} onCancel={() => setTab('collection')} /> : <ReadOnlyPlaceholder message="Adding coins requires admin access." onRequestAdmin={() => setShowAdminLogin(true)} />
+          adminMode
+            ? <AddCoinView onAdd={handleAddCoin} onCancel={() => setTab('collection')} />
+            : <ReadOnlyPlaceholder message="Adding coins requires admin access." onRequestAdmin={() => setShowAdminLogin(true)} />
         ) : tab === 'sold' ? (
           <SoldArchiveView soldCoins={soldCoins} />
         ) : (
-          <SettingsView onConfigured={() => { setConfigured(true); loadData(); }} adminMode={adminMode} onAdminLogin={() => setShowAdminLogin(true)} onAdminLogout={handleAdminLogout} onSavePin={handleSavePin} />
+          <SettingsView
+            onConfigured={() => { setConfigured(true); loadData(); }}
+            adminMode={adminMode}
+            onAdminLogin={() => setShowAdminLogin(true)}
+            onAdminLogout={handleAdminLogout}
+            onSavePin={handleSavePin}
+            onSavePassword={handleSavePassword}
+          />
         )}
       </div>
+
       {!selectedCoin && (
         <nav className="tab-bar">
           <TabItem icon={<CollectionIcon />} label="Collection" active={tab === 'collection'} onClick={() => setTab('collection')} />
-          <TabItem icon={<PortfolioIcon />} label="Portfolio" active={tab === 'portfolio'} onClick={() => setTab('portfolio')} />
-          <TabItem icon={<AddIcon />} label="Add Coin" active={tab === 'add'} onClick={() => setTab('add')} />
-          <TabItem icon={<SoldIcon />} label="Sold" active={tab === 'sold'} onClick={() => setTab('sold')} />
-          <TabItem icon={<SettingsIcon />} label="Settings" active={tab === 'settings'} onClick={() => setTab('settings')} />
+          <TabItem icon={<PortfolioIcon />}  label="Portfolio"  active={tab === 'portfolio'} onClick={() => setTab('portfolio')} />
+          <TabItem icon={<AddIcon />}        label="Add Coin"   active={tab === 'add'}       onClick={() => setTab('add')} />
+          <TabItem icon={<SoldIcon />}       label="Sold"       active={tab === 'sold'}      onClick={() => setTab('sold')} />
+          <TabItem icon={<SettingsIcon />}   label="Settings"   active={tab === 'settings'}  onClick={() => setTab('settings')} />
         </nav>
       )}
-      {showAdminLogin && <AdminLoginModal onLogin={handleAdminLogin} onClose={() => setShowAdminLogin(false)} />}
+
+      {showAdminLogin && (
+        <AdminLoginModal onLogin={handleAdminLogin} onClose={() => setShowAdminLogin(false)} />
+      )}
     </div>
   );
 }
