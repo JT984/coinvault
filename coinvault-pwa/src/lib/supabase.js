@@ -1,14 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
+// These values are filled in from your .env.local file (see README)
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || localStorage.getItem('sb_url') || '';
 const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || localStorage.getItem('sb_key') || '';
 
 export const isSupabaseConfigured = () =>
   SUPABASE_URL.startsWith('https://') && SUPABASE_ANON_KEY.length > 0;
 
+// Only create the client if we have valid credentials — avoids crash on first load
 export const supabase = isSupabaseConfigured()
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
+
+// ─── Coins ────────────────────────────────────────────────────────────────────
 
 export async function fetchCoins() {
   const { data, error } = await supabase
@@ -45,6 +49,8 @@ export async function deleteCoin(id) {
   if (error) throw error;
 }
 
+// ─── Sold coins ───────────────────────────────────────────────────────────────
+
 export async function fetchSoldCoins() {
   const { data, error } = await supabase
     .from('sold_coins')
@@ -64,23 +70,7 @@ export async function insertSoldCoin(sold) {
   return data;
 }
 
-export async function getAdminPin() {
-  if (!isSupabaseConfigured()) return null;
-  const { data } = await supabase
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'admin_pin')
-    .single();
-  return data?.value || null;
-}
-
-export async function setAdminPin(pin) {
-  if (!isSupabaseConfigured()) return false;
-  const { error } = await supabase
-    .from('app_settings')
-    .upsert({ key: 'admin_pin', value: pin }, { onConflict: 'key' });
-  return !error;
-}
+// ─── Field name mapping (camelCase JS ↔ snake_case DB) ───────────────────────
 
 function toDb(c) {
   const out = {};
@@ -151,4 +141,42 @@ function soldToDb(s) {
     sale_date: s.saleDate,
     sold_to: s.soldTo,
   };
+}
+
+// ─── Admin PIN (stored in Supabase so it syncs across all devices) ────────────
+
+export async function getAdminPin() {
+  if (!isSupabaseConfigured()) return null;
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'admin_pin')
+    .single();
+  return data?.value || null;
+}
+
+export async function setAdminPin(pin) {
+  if (!isSupabaseConfigured()) return false;
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key: 'admin_pin', value: pin }, { onConflict: 'key' });
+  return !error;
+}
+
+export async function getAppPassword() {
+  if (!isSupabaseConfigured()) return null;
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'app_password')
+    .single();
+  return data?.value || null;
+}
+
+export async function setAppPassword(password) {
+  if (!isSupabaseConfigured()) return false;
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key: 'app_password', value: password }, { onConflict: 'key' });
+  return !error;
 }
